@@ -7,20 +7,23 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.BowItem;
-import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 public class AutoBowClient implements ClientModInitializer {
 
-    private static KeyBinding toggleKey;   // M   -> ac/kapat
-    private static KeyBinding upKey;       // .   -> cekim suresi +1
-    private static KeyBinding downKey;     // ,   -> cekim suresi -1
+    private static KeyBinding toggleKey;  // M -> ac/kapat
+    private static KeyBinding upKey;      // J -> germe suresi +10ms
+    private static KeyBinding downKey;    // K -> germe suresi -10ms
 
-    private static boolean active = false;
+    private boolean active = false;
 
-    private int chargeTicks = 5;   // yay kac tick cekilecek (min 4)
-    private int cooldown = 0;      // birakma sonrasi bekleme
+    // JS'teki Time.sleep(150) ve Time.sleep(50) ile ayni
+    private int chargeMs = 150;
+    private static final int RESTMS = 50;
+
+    private boolean charging = false;
+    private long phaseStart = 0;
 
     @Override
     public void onInitializeClient() {
@@ -44,67 +47,56 @@ public class AutoBowClient implements ClientModInitializer {
 
         while (toggleKey.wasPressed()) {
             active = !active;
-            cooldown = 0;
-            client.options.useKey.setPressed(false);
-            msg(client, active ? "§aAutoBow: ACIK §7(" + chargeTicks + " tick)"
-                               : "§cAutoBow: KAPALI");
+            setUse(client, false);
+            charging = false;
+            msg(client, active ? "§e[FastBow] §aAKTIF §7(" + chargeMs + "ms)"
+                               : "§e[FastBow] §cKAPALI");
         }
 
         while (upKey.wasPressed()) {
-            chargeTicks = Math.min(20, chargeTicks + 1);
-            msg(client, "§eCekim: " + chargeTicks + " tick §7(~" + rate() + " ok/sn)");
+            chargeMs = Math.min(1000, chargeMs + 10);
+            msg(client, "§e[FastBow] Germe: §f" + chargeMs + "ms");
         }
 
         while (downKey.wasPressed()) {
-            chargeTicks = Math.max(4, chargeTicks - 1);
-            msg(client, "§eCekim: " + chargeTicks + " tick §7(~" + rate() + " ok/sn)");
+            chargeMs = Math.max(100, chargeMs - 10);
+            msg(client, "§e[FastBow] Germe: §f" + chargeMs + "ms");
         }
 
         if (!active) return;
 
-        if (client.currentScreen != null || !selectBow(client)) {
-            client.options.useKey.setPressed(false);
-            cooldown = 0;
+        // Menu acikken veya elde yay yokken dur (JS'teki mainHand kontrolu)
+        boolean bowInHand = client.player.getMainHandStack().getItem() instanceof BowItem;
+        if (client.currentScreen != null || !bowInHand) {
+            setUse(client, false);
+            charging = false;
             return;
         }
 
-        // birakma sonrasi kisa bekleme
-        if (cooldown > 0) {
-            cooldown--;
-            client.options.useKey.setPressed(false);
-            return;
-        }
+        long now = System.currentTimeMillis();
 
-        // OYUNUN kendi sayacini oku - kayma olmaz
-        int useTime = client.player.isUsingItem() ? client.player.getItemUseTime() : 0;
-
-        if (useTime >= chargeTicks) {
-            client.options.useKey.setPressed(false);  // birak -> ok gider
-            cooldown = 2;
+        if (!charging) {
+            // dinlenme fazi bitti mi?
+            if (now - phaseStart >= RESTMS) {
+                setUse(client, true);   // yayi germeye basla
+                charging = true;
+                phaseStart = now;
+            }
         } else {
-            client.options.useKey.setPressed(true);   // cekmeye devam
+            // germe suresi doldu mu?
+            if (now - phaseStart >= chargeMs) {
+                setUse(client, false);  // birak -> ok gider
+                charging = false;
+                phaseStart = now;
+            }
         }
     }
 
-    private String rate() {
-        return String.format("%.1f", 20.0 / (chargeTicks + 3));
+    private void setUse(MinecraftClient client, boolean state) {
+        client.options.useKey.setPressed(state);
     }
 
     private void msg(MinecraftClient client, String s) {
         if (client.player != null) client.player.sendMessage(Text.literal(s), true);
-    }
-
-    private boolean selectBow(MinecraftClient client) {
-        var inv = client.player.getInventory();
-        if (inv.getStack(inv.selectedSlot).getItem() instanceof BowItem) return true;
-        if (client.player.isUsingItem()) return true;
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = inv.getStack(i);
-            if (stack.getItem() instanceof BowItem) {
-                inv.selectedSlot = i;
-                return true;
-            }
-        }
-        return false;
     }
 }

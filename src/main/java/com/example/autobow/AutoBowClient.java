@@ -13,23 +13,28 @@ import org.lwjgl.glfw.GLFW;
 
 public class AutoBowClient implements ClientModInitializer {
 
-    private static KeyBinding toggleKey;
+    private static KeyBinding toggleKey;   // M   -> ac/kapat
+    private static KeyBinding upKey;       // .   -> cekim suresi +1
+    private static KeyBinding downKey;     // ,   -> cekim suresi -1
+
     private static boolean active = false;
 
-    // Yayin kac tick cekilecegi (daha yuksek = daha guclu ama daha yavas)
-    private static final int CHARGE_TICKS = 5;
-    private static final int RELEASE_TICKS = 3;
-
-    private int timer = 0;
+    private int chargeTicks = 5;   // yay kac tick cekilecek (min 4)
+    private int cooldown = 0;      // birakma sonrasi bekleme
 
     @Override
     public void onInitializeClient() {
         toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.autobow.toggle",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_M,
-                "category.autobow"
-        ));
+                "key.autobow.toggle", InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_M, "category.autobow"));
+
+        upKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.autobow.up", InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_PERIOD, "category.autobow"));
+
+        downKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.autobow.down", InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_COMMA, "category.autobow"));
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
     }
@@ -39,45 +44,60 @@ public class AutoBowClient implements ClientModInitializer {
 
         while (toggleKey.wasPressed()) {
             active = !active;
-            timer = 0;
+            cooldown = 0;
             client.options.useKey.setPressed(false);
-            client.player.sendMessage(
-                    Text.literal(active ? "§aAutoBow: ACIK" : "§cAutoBow: KAPALI"), true);
+            msg(client, active ? "§aAutoBow: ACIK §7(" + chargeTicks + " tick)"
+                               : "§cAutoBow: KAPALI");
+        }
+
+        while (upKey.wasPressed()) {
+            chargeTicks = Math.min(20, chargeTicks + 1);
+            msg(client, "§eCekim: " + chargeTicks + " tick §7(~" + rate() + " ok/sn)");
+        }
+
+        while (downKey.wasPressed()) {
+            chargeTicks = Math.max(4, chargeTicks - 1);
+            msg(client, "§eCekim: " + chargeTicks + " tick §7(~" + rate() + " ok/sn)");
         }
 
         if (!active) return;
 
         if (client.currentScreen != null || !selectBow(client)) {
             client.options.useKey.setPressed(false);
-            timer = 0;
+            cooldown = 0;
             return;
         }
 
-        // Faz 1: yayi cekmeye basla, gercekten cekmeye baslayana kadar bekle
-        if (timer == 0) {
-            client.options.useKey.setPressed(true);
-            if (client.player.isUsingItem()) timer = 1;  // onaylandi, saymaya basla
+        // birakma sonrasi kisa bekleme
+        if (cooldown > 0) {
+            cooldown--;
+            client.options.useKey.setPressed(false);
             return;
         }
 
-        // Faz 2: onaylanmis tick sayimi
-        timer++;
+        // OYUNUN kendi sayacini oku - kayma olmaz
+        int useTime = client.player.isUsingItem() ? client.player.getItemUseTime() : 0;
 
-        if (timer <= CHARGE_TICKS) {
-            client.options.useKey.setPressed(true);
-        } else if (timer <= CHARGE_TICKS + RELEASE_TICKS) {
+        if (useTime >= chargeTicks) {
             client.options.useKey.setPressed(false);  // birak -> ok gider
+            cooldown = 2;
         } else {
-            timer = 0;
+            client.options.useKey.setPressed(true);   // cekmeye devam
         }
     }
 
-    // Hotbar'da yay varsa ona gecer
+    private String rate() {
+        return String.format("%.1f", 20.0 / (chargeTicks + 3));
+    }
+
+    private void msg(MinecraftClient client, String s) {
+        if (client.player != null) client.player.sendMessage(Text.literal(s), true);
+    }
+
     private boolean selectBow(MinecraftClient client) {
         var inv = client.player.getInventory();
         if (inv.getStack(inv.selectedSlot).getItem() instanceof BowItem) return true;
         if (client.player.isUsingItem()) return true;
-        
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack.getItem() instanceof BowItem) {

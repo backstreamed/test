@@ -30,11 +30,11 @@ public class AutoBowClient implements ClientModInitializer {
 
         upKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobow.up", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_PERIOD, "category.autobow"));
+                GLFW.GLFW_KEY_J, "category.autobow"));
 
         downKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobow.down", InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_COMMA, "category.autobow"));
+                GLFW.GLFW_KEY_K, "category.autobow"));
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
     }

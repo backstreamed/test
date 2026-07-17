@@ -17,8 +17,8 @@ public class AutoBowClient implements ClientModInitializer {
     private static boolean active = false;
 
     // Yayin kac tick cekilecegi (daha yuksek = daha guclu ama daha yavas)
-    private static final int CHARGE_TICKS = 6;
-    private static final int RELEASE_TICKS = 2;
+    private static final int CHARGE_TICKS = 5;
+    private static final int RELEASE_TICKS = 3;
 
     private int timer = 0;
 
@@ -47,21 +47,26 @@ public class AutoBowClient implements ClientModInitializer {
 
         if (!active) return;
 
-        if (client.currentScreen != null) {
+        if (client.currentScreen != null || !selectBow(client)) {
             client.options.useKey.setPressed(false);
+            timer = 0;
             return;
         }
 
-        if (!selectBow(client)) {
-            client.options.useKey.setPressed(false);
+        // Faz 1: yayi cekmeye basla, gercekten cekmeye baslayana kadar bekle
+        if (timer == 0) {
+            client.options.useKey.setPressed(true);
+            if (client.player.isUsingItem()) timer = 1;  // onaylandi, saymaya basla
             return;
         }
 
+        // Faz 2: onaylanmis tick sayimi
         timer++;
+
         if (timer <= CHARGE_TICKS) {
             client.options.useKey.setPressed(true);
         } else if (timer <= CHARGE_TICKS + RELEASE_TICKS) {
-            client.options.useKey.setPressed(false);
+            client.options.useKey.setPressed(false);  // birak -> ok gider
         } else {
             timer = 0;
         }
@@ -71,7 +76,8 @@ public class AutoBowClient implements ClientModInitializer {
     private boolean selectBow(MinecraftClient client) {
         var inv = client.player.getInventory();
         if (inv.getStack(inv.selectedSlot).getItem() instanceof BowItem) return true;
-
+        if (client.player.isUsingItem()) return true;
+        
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack.getItem() instanceof BowItem) {
